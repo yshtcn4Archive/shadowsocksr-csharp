@@ -91,12 +91,6 @@ namespace Shadowsocks.View
 
             LoadCurrentConfiguration();
 
-            Configuration cfg = controller.GetCurrentConfiguration();
-            if (cfg.isDefaultConfig() || cfg.nodeFeedAutoUpdate)
-            {
-                updateSubscribeManager.CreateTask(controller.GetCurrentConfiguration(), updateFreeNodeChecker, -1, !cfg.isDefaultConfig());
-            }
-
             timerDelayCheckUpdate = new System.Timers.Timer(1000.0 * 10);
             timerDelayCheckUpdate.Elapsed += timer_Elapsed;
             timerDelayCheckUpdate.Start();
@@ -116,6 +110,12 @@ namespace Shadowsocks.View
                 }
             }
             updateChecker.CheckUpdate(controller.GetCurrentConfiguration());
+
+            Configuration cfg = controller.GetCurrentConfiguration();
+            if (cfg.isDefaultConfig() || cfg.nodeFeedAutoUpdate)
+            {
+                updateSubscribeManager.CreateTask(controller.GetCurrentConfiguration(), updateFreeNodeChecker, -1, !cfg.isDefaultConfig(), false);
+            }
         }
 
         void controller_Errored(object sender, System.IO.ErrorEventArgs e)
@@ -194,8 +194,10 @@ namespace Shadowsocks.View
 
             // we want to show more details but notify icon title is limited to 63 characters
             string text = (enabled ?
-                    I18N.GetString("System Proxy On: ") + (global ? I18N.GetString("Global") : I18N.GetString("PAC")) :
-                    String.Format(I18N.GetString("Running: Port {0}"), config.localPort))  // this feedback is very important because they need to know Shadowsocks is running
+                    (global ? I18N.GetString("Global") : I18N.GetString("PAC")) :
+                    I18N.GetString("Disable system proxy"))
+                    + "\r\n"
+                    + String.Format(I18N.GetString("Running: Port {0}"), config.localPort)  // this feedback is very important because they need to know Shadowsocks is running
                     ;
             _notifyIcon.Text = text.Substring(0, Math.Min(63, text.Length));
         }
@@ -333,6 +335,7 @@ namespace Shadowsocks.View
 
         void updateFreeNodeChecker_NewFreeNodeFound(object sender, EventArgs e)
         {
+            string lastGroup = null;
             int count = 0;
             if (!String.IsNullOrEmpty(updateFreeNodeChecker.FreeNodeResult))
             {
@@ -387,7 +390,6 @@ namespace Shadowsocks.View
                         if (!config.isDefaultConfig())
                             keep_selected_server = true;
                     }
-                    string lastGroup = null;
                     string curGroup = null;
                     foreach (string url in urls)
                     {
@@ -449,6 +451,7 @@ namespace Shadowsocks.View
                     // import all, find difference
                     {
                         Dictionary<string, Server> old_servers = new Dictionary<string, Server>();
+                        Dictionary<string, Server> old_insert_servers = new Dictionary<string, Server>();
                         if (!String.IsNullOrEmpty(lastGroup))
                         {
                             for (int i = config.configs.Count - 1; i >= 0; --i)
@@ -465,20 +468,44 @@ namespace Shadowsocks.View
                             {
                                 Server server = new Server(url, curGroup);
                                 bool match = false;
-                                foreach (KeyValuePair<string, Server> pair in old_servers)
+                                if (!match)
                                 {
-                                    if (server.isMatchServer(pair.Value))
+                                    foreach (KeyValuePair<string, Server> pair in old_insert_servers)
                                     {
-                                        match = true;
-                                        old_servers.Remove(pair.Key);
-                                        pair.Value.CopyServerInfo(server);
-                                        ++count;
-                                        break;
+                                        if (server.isMatchServer(pair.Value))
+                                        {
+                                            match = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                old_insert_servers[server.id] = server;
+                                if (!match)
+                                {
+                                    foreach (KeyValuePair<string, Server> pair in old_servers)
+                                    {
+                                        if (server.isMatchServer(pair.Value))
+                                        {
+                                            match = true;
+                                            old_servers.Remove(pair.Key);
+                                            pair.Value.CopyServerInfo(server);
+                                            ++count;
+                                            break;
+                                        }
                                     }
                                 }
                                 if (!match)
                                 {
-                                    config.configs.Add(server);
+                                    int insert_index = config.configs.Count;
+                                    for (int index = config.configs.Count - 1; index >= 0; --index)
+                                    {
+                                        if (config.configs[index].group == curGroup)
+                                        {
+                                            insert_index = index + 1;
+                                            break;
+                                        }
+                                    }
+                                    config.configs.Insert(insert_index, server);
                                     ++count;
                                 }
                             }
@@ -529,19 +556,34 @@ namespace Shadowsocks.View
                     {
                         config.index = config.configs.Count - 1;
                     }
+                    if (count > 0)
+                    {
+                        for (int i = 0; i < config.serverSubscribes.Count; ++i)
+                        {
+                            if (config.serverSubscribes[i].URL == updateFreeNodeChecker.subscribeTask.URL)
+                            {
+                                config.serverSubscribes[i].LastUpdateTime = (UInt64)Math.Floor(DateTime.Now.Subtract(new DateTime(1970, 1, 1, 0, 0, 0)).TotalSeconds);
+                            }
+                        }
+                    }
                     controller.SaveServersConfig(config);
-
                 }
             }
+            else
+            {
+                lastGroup = updateFreeNodeChecker.subscribeTask.Group;
+            }
+            
             if (count > 0)
             {
-                ShowBalloonTip(I18N.GetString("Success"),
-                    I18N.GetString("Update subscribe SSR node success"), ToolTipIcon.Info, 10000);
+                if (updateFreeNodeChecker.noitify)
+                    ShowBalloonTip(I18N.GetString("Success"),
+                        String.Format(I18N.GetString("Update subscribe {0} success"), lastGroup), ToolTipIcon.Info, 10000);
             }
             else
             {
                 ShowBalloonTip(I18N.GetString("Error"),
-                    I18N.GetString("Update subscribe SSR node failure"), ToolTipIcon.Info, 10000);
+                    String.Format(I18N.GetString("Update subscribe {0} failure"), lastGroup), ToolTipIcon.Info, 10000);
             }
             if (updateSubscribeManager.Next())
             {
@@ -909,12 +951,12 @@ namespace Shadowsocks.View
 
         private void OpenWiki_Click(object sender, EventArgs e)
         {
-            Process.Start("https://github.com/breakwa11/shadowsocks-rss/wiki");
+            Process.Start("https://github.com/shadowsocksrr/shadowsocks-rss/wiki");
         }
 
         private void FeedbackItem_Click(object sender, EventArgs e)
         {
-            Process.Start("https://github.com/shadowsocksr/shadowsocksr-csharp/issues/new");
+            Process.Start("https://github.com/shadowsocksrr/shadowsocksr-csharp/issues/new");
         }
 
         private void ResetPasswordItem_Click(object sender, EventArgs e)
@@ -1051,22 +1093,22 @@ namespace Shadowsocks.View
 
         private void UpdatePACFromLanIPListItem_Click(object sender, EventArgs e)
         {
-            controller.UpdatePACFromOnlinePac("https://raw.githubusercontent.com/breakwa11/breakwa11.github.io/master/ssr/ss_lanip.pac");
+            controller.UpdatePACFromOnlinePac("https://raw.githubusercontent.com/shadowsocksrr/breakwa11.github.io/master/ssr/ss_lanip.pac");
         }
 
         private void UpdatePACFromCNWhiteListItem_Click(object sender, EventArgs e)
         {
-            controller.UpdatePACFromOnlinePac("https://raw.githubusercontent.com/breakwa11/breakwa11.github.io/master/ssr/ss_white.pac");
+            controller.UpdatePACFromOnlinePac("https://raw.githubusercontent.com/shadowsocksrr/breakwa11.github.io/master/ssr/ss_white.pac");
         }
 
         private void UpdatePACFromCNOnlyListItem_Click(object sender, EventArgs e)
         {
-            controller.UpdatePACFromOnlinePac("https://raw.githubusercontent.com/breakwa11/breakwa11.github.io/master/ssr/ss_white_r.pac");
+            controller.UpdatePACFromOnlinePac("https://raw.githubusercontent.com/shadowsocksrr/breakwa11.github.io/master/ssr/ss_white_r.pac");
         }
 
         private void UpdatePACFromCNIPListItem_Click(object sender, EventArgs e)
         {
-            controller.UpdatePACFromOnlinePac("https://raw.githubusercontent.com/breakwa11/breakwa11.github.io/master/ssr/ss_cnip.pac");
+            controller.UpdatePACFromOnlinePac("https://raw.githubusercontent.com/shadowsocksrr/breakwa11.github.io/master/ssr/ss_cnip.pac");
         }
 
         private void EditUserRuleFileForGFWListItem_Click(object sender, EventArgs e)
@@ -1087,12 +1129,12 @@ namespace Shadowsocks.View
 
         private void CheckNodeUpdate_Click(object sender, EventArgs e)
         {
-            updateSubscribeManager.CreateTask(controller.GetCurrentConfiguration(), updateFreeNodeChecker, -1, true);
+            updateSubscribeManager.CreateTask(controller.GetCurrentConfiguration(), updateFreeNodeChecker, -1, true, true);
         }
 
         private void CheckNodeUpdateBypassProxy_Click(object sender, EventArgs e)
         {
-            updateSubscribeManager.CreateTask(controller.GetCurrentConfiguration(), updateFreeNodeChecker, -1, false);
+            updateSubscribeManager.CreateTask(controller.GetCurrentConfiguration(), updateFreeNodeChecker, -1, false, true);
         }
 
         private void ShowLogItem_Click(object sender, EventArgs e)

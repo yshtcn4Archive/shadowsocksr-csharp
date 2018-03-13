@@ -14,9 +14,9 @@ namespace Shadowsocks.Controller
     {
         private const string GFWLIST_URL = "https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt";
 
-        private const string GFWLIST_BACKUP_URL = "https://raw.githubusercontent.com/breakwa11/breakwa11.github.io/master/ssr/gfwlist.txt";
+        private const string GFWLIST_BACKUP_URL = "https://raw.githubusercontent.com/shadowsocksrr/breakwa11.github.io/master/ssr/gfwlist.txt";
 
-        private const string GFWLIST_TEMPLATE_URL = "https://raw.githubusercontent.com/breakwa11/breakwa11.github.io/master/ssr/ss_gfw.pac";
+        private const string GFWLIST_TEMPLATE_URL = "https://raw.githubusercontent.com/shadowsocksrr/breakwa11.github.io/master/ssr/ss_gfw.pac";
 
         private static string PAC_FILE = PACServer.PAC_FILE;
 
@@ -182,6 +182,10 @@ namespace Shadowsocks.Controller
             {
                 lastConfig = config;
                 WebClient http = new WebClient();
+                http.Headers.Add("User-Agent",
+                    String.IsNullOrEmpty(config.proxyUserAgent) ?
+                    "Mozilla/5.0 (Windows NT 5.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.3319.102 Safari/537.36"
+                    : config.proxyUserAgent);
                 WebProxy proxy = new WebProxy(IPAddress.Loopback.ToString(), config.localPort);
                 if (!string.IsNullOrEmpty(config.authPass))
                 {
@@ -194,6 +198,10 @@ namespace Shadowsocks.Controller
             else
             {
                 WebClient http = new WebClient();
+                http.Headers.Add("User-Agent",
+                    String.IsNullOrEmpty(config.proxyUserAgent) ?
+                    "Mozilla/5.0 (Windows NT 5.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.3319.102 Safari/537.36"
+                    : config.proxyUserAgent);
                 WebProxy proxy = new WebProxy(IPAddress.Loopback.ToString(), config.localPort);
                 if (!string.IsNullOrEmpty(config.authPass))
                 {
@@ -209,6 +217,10 @@ namespace Shadowsocks.Controller
         public void UpdatePACFromGFWList(Configuration config, string url)
         {
             WebClient http = new WebClient();
+            http.Headers.Add("User-Agent",
+                String.IsNullOrEmpty(config.proxyUserAgent) ?
+                "Mozilla/5.0 (Windows NT 5.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.3319.102 Safari/537.36"
+                : config.proxyUserAgent);
             WebProxy proxy = new WebProxy(IPAddress.Loopback.ToString(), config.localPort);
             if (!string.IsNullOrEmpty(config.authPass))
             {
